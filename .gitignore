@@ -1,0 +1,15 @@
+# Binary (root level only)
+/breathe
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+
+# Test coverage
+coverage.out
+
+# TLDR cache
+.tldr/
