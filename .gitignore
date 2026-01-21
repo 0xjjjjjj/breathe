@@ -19,3 +19,7 @@ breate
 .claude/
 .tldr/
 .tldrignore
+
+# Planning docs (internal)
+docs/plans/
+thoughts/
