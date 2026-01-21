@@ -14,3 +14,8 @@ coverage.out
 # TLDR cache
 .tldr/
 breate
+
+# Claude/AI tooling
+.claude/
+.tldr/
+.tldrignore
