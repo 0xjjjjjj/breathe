@@ -1,7 +1,6 @@
 package scanner
 
 import (
-	"io/fs"
 	"os"
 	"path/filepath"
 	"sync"
@@ -54,7 +53,8 @@ func Scan(root string, results chan<- ScanResult) {
 
 			results <- ScanResult{Entry: entry}
 
-			if e.IsDir() && !isSymlink(info) {
+			// Use e.Type() to check symlink - more reliable than info.Mode()
+			if e.IsDir() && e.Type()&os.ModeSymlink == 0 {
 				wg.Add(1)
 				sem <- struct{}{}
 				go func(p string) {
@@ -70,6 +70,3 @@ func Scan(root string, results chan<- ScanResult) {
 	wg.Wait()
 }
 
-func isSymlink(info fs.FileInfo) bool {
-	return info.Mode()&os.ModeSymlink != 0
-}

@@ -27,6 +27,7 @@ var (
 	yesFlag    bool
 	trashFlag  bool
 	patternArg string
+	topLevel   bool // Quick top-level scan only
 )
 
 var rootCmd = &cobra.Command{
@@ -55,12 +56,103 @@ var scanCmd = &cobra.Command{
 			return err
 		}
 
+		// Quick top-level scan using du (much faster for large dirs)
+		if topLevel {
+			return runTopLevelScan(absPath)
+		}
+
 		if jsonOut {
 			return runJSONScan(cfg, absPath)
 		}
 
 		return tui.Run(cfg, absPath)
 	},
+}
+
+func runTopLevelScan(path string) error {
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return err
+	}
+
+	type item struct {
+		name  string
+		size  int64
+		isDir bool
+	}
+
+	var items []item
+	var total int64
+
+	fmt.Printf("Scanning %s (top-level only)...\n", path)
+
+	for _, e := range entries {
+		fullPath := filepath.Join(path, e.Name())
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+
+		var size int64
+		if e.IsDir() {
+			// Use du for directory sizes (fast)
+			size = getDirSize(fullPath)
+		} else {
+			size = info.Size()
+		}
+
+		items = append(items, item{name: e.Name(), size: size, isDir: e.IsDir()})
+		total += size
+	}
+
+	// Sort by size descending
+	for i := 0; i < len(items)-1; i++ {
+		for j := i + 1; j < len(items); j++ {
+			if items[j].size > items[i].size {
+				items[i], items[j] = items[j], items[i]
+			}
+		}
+	}
+
+	// Print results
+	fmt.Printf("\nTotal: %s\n\n", formatBytes(total))
+	for i, it := range items {
+		if i >= 30 {
+			fmt.Printf("  ... and %d more\n", len(items)-30)
+			break
+		}
+		icon := "📄"
+		if it.isDir {
+			icon = "📁"
+		}
+		fmt.Printf("%s %s  %s\n", icon, formatBytes(it.size), it.name)
+	}
+
+	return nil
+}
+
+func getDirSize(path string) int64 {
+	var size int64
+	filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
+		if err == nil && !info.IsDir() {
+			size += info.Size()
+		}
+		return nil
+	})
+	return size
+}
+
+func formatBytes(bytes int64) string {
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%7d B", bytes)
+	}
+	div, exp := int64(unit), 0
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%6.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
 }
 
 func runJSONScan(cfg *config.Config, path string) error {
@@ -289,6 +381,7 @@ func init() {
 
 	scanCmd.Flags().BoolVar(&jsonOut, "json", false, "output as JSON")
 	scanCmd.Flags().BoolVar(&junkOnly, "junk", false, "show only detected junk")
+	scanCmd.Flags().BoolVar(&topLevel, "top", false, "quick top-level scan only (faster for large dirs)")
 	rootCmd.AddCommand(scanCmd)
 
 	organizeCmd.Flags().BoolVar(&dryRun, "dry-run", false, "show what would happen")

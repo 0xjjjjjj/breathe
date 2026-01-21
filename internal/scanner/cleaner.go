@@ -1,12 +1,26 @@
 package scanner
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/0xjjjjjj/breathe/internal/history"
 )
+
+// Paths that should never be deleted
+var protectedPaths = []string{
+	"/", "/usr", "/etc", "/var", "/tmp", "/opt",
+	"/bin", "/sbin", "/lib", "/lib64",
+	"/System", "/Library", "/Applications", // macOS
+	"/Windows", "/Program Files",            // Windows
+	"/home", "/root",                        // Linux
+}
+
+var ErrProtectedPath = errors.New("refusing to delete protected system path")
+var ErrPathTraversal = errors.New("path contains directory traversal")
 
 type Cleaner struct {
 	db       *history.DB
@@ -17,7 +31,47 @@ func NewCleaner(db *history.DB, useTrash bool) *Cleaner {
 	return &Cleaner{db: db, useTrash: useTrash}
 }
 
+// validatePath ensures the path is safe to delete
+func validatePath(path string) error {
+	// Must be absolute
+	if !filepath.IsAbs(path) {
+		return errors.New("path must be absolute")
+	}
+
+	// Clean the path and check for traversal attempts
+	cleaned := filepath.Clean(path)
+	if strings.Contains(path, "..") {
+		return ErrPathTraversal
+	}
+
+	// Check against protected paths
+	for _, protected := range protectedPaths {
+		if cleaned == protected {
+			return fmt.Errorf("%w: %s", ErrProtectedPath, path)
+		}
+	}
+
+	// Don't allow deleting home directory itself
+	home, _ := os.UserHomeDir()
+	if cleaned == home {
+		return fmt.Errorf("%w: home directory", ErrProtectedPath)
+	}
+
+	// Don't allow deleting first-level directories in root
+	parts := strings.Split(cleaned, string(filepath.Separator))
+	if len(parts) <= 2 && parts[0] == "" {
+		return fmt.Errorf("%w: top-level directory", ErrProtectedPath)
+	}
+
+	return nil
+}
+
 func (c *Cleaner) Delete(path string) error {
+	// Validate path before any operations
+	if err := validatePath(path); err != nil {
+		return err
+	}
+
 	info, err := os.Stat(path)
 	if err != nil {
 		return err

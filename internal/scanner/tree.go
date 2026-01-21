@@ -148,6 +148,55 @@ func (t *Tree) FileCount() int {
 	return count
 }
 
+// Remove removes a node and all its children from the tree
+func (t *Tree) Remove(path string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	node, exists := t.nodes[path]
+	if !exists {
+		return
+	}
+
+	// Subtract size from all parents
+	size := node.Size
+	parentPath := filepath.Dir(path)
+	for parentPath != path && parentPath != "." {
+		if parent, ok := t.nodes[parentPath]; ok {
+			parent.Size -= size
+		}
+		path2 := parentPath
+		parentPath = filepath.Dir(parentPath)
+		if parentPath == path2 {
+			break
+		}
+	}
+
+	// Remove from parent's children
+	parentPath = filepath.Dir(path)
+	if parent, ok := t.nodes[parentPath]; ok {
+		delete(parent.children, node.Name)
+	}
+
+	// Remove node and all children recursively
+	t.removeRecursive(path)
+}
+
+func (t *Tree) removeRecursive(path string) {
+	node, exists := t.nodes[path]
+	if !exists {
+		return
+	}
+
+	// Remove children first
+	for _, child := range node.children {
+		t.removeRecursive(child.Path)
+	}
+
+	// Remove this node
+	delete(t.nodes, path)
+}
+
 // Add is a convenience method for tests - adds a node with given path, isDir, and size
 func (t *Tree) Add(path string, isDir bool, size int64) {
 	t.mu.Lock()
